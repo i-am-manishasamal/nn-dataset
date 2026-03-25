@@ -9,11 +9,15 @@ import re
 import json
 from typing import Any
 
-import torch
 from os import makedirs, remove
 from os.path import exists, dirname, join
 
 from ab.nn.util.Const import *
+
+
+def _torch():
+    import torch
+    return torch
 
 
 def create_file(file_dir, file_name, content=''):
@@ -32,6 +36,7 @@ def get_obj_attr(obj, f_name, default=None):
 
 
 def torch_device():
+    torch = _torch()
     if torch.cuda.is_available():
         device = torch.device("cuda")
     elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
@@ -140,6 +145,7 @@ def format_time(sec):
 
 def release_memory():
     try:
+        torch = _torch()
         gc.collect()
         if torch.cuda.is_available(): torch.cuda.empty_cache()
     except Exception as e:
@@ -154,6 +160,7 @@ def str_not_none(prefix, value):
 
 
 def export_model_to_onnx(model, dummy_input, path):
+    torch = _torch()
     model.eval()
     assert isinstance(model, torch.nn.Module)
     hasAdaptivePoolingLayer = False
@@ -185,12 +192,14 @@ def export_model_to_onnx(model, dummy_input, path):
 
 
 def train_loader_f(train_dataset, batch, num_workers):
+    torch = _torch()
     return torch.utils.data.DataLoader(train_dataset, batch_size=batch, shuffle=True,
                                        num_workers=get_obj_attr(train_dataset, 'num_workers', default=num_workers),
                                        collate_fn=get_obj_attr(train_dataset, 'collate_fn'))
 
 
 def test_loader_f(test_dataset, batch, num_workers):
+    torch = _torch()
     return torch.utils.data.DataLoader(test_dataset, batch_size=batch, shuffle=False,
                                        num_workers=get_obj_attr(test_dataset, 'num_workers', default=num_workers),
                                        collate_fn=get_obj_attr(test_dataset, 'collate_fn'))
@@ -233,6 +242,7 @@ def export_torch_weights(model, path):
     Saves the trained weights of a model's state_dict to the specified path.
     This is a general function that can be used for any PyTorch model.
     """
+    torch = _torch()
     # Ensure the directory exists
     makedirs(dirname(path), exist_ok=True)
     print(f"Exporting model weights to {path}...")

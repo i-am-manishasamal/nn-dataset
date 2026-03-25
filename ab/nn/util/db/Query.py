@@ -102,6 +102,13 @@ def _ensure_temp_work_indexes(cur: Cursor, work_table: str) -> None:
     )
 
 
+def _ensure_varn_fast_index(cur: Cursor) -> None:
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stat_varn_fast "
+        "ON stat(task, dataset, metric, nn, accuracy DESC, epoch ASC, id)"
+    )
+
+
 def _prepare_anchor_candidates(cur: Cursor, sql: "JoinConf", work_table: str) -> str:
     cand_table = _anchor_candidates_table()
     where_sql, params = build_stat_filters_sql(sql, alias="s")
@@ -475,6 +482,42 @@ def join_nn_query_sql_Var_num(sql: JoinConf,limit_clause:Optional[str], cur: Cur
     )
 
     return fill_hyper_prm(cur, num_joint_nns=1)
+
+
+def select_sql_var_num_candidate_ids(cur: Cursor, sql: JoinConf, work_table: str, base_params: list) -> list[str]:
+    sql.validate()
+    n = int(sql.num_joint_nns)
+    where_sql, params = build_stat_filters_sql(sql, alias="b")
+    _ensure_varn_fast_index(cur)
+
+    cur.execute(
+        f"""
+        WITH base AS (
+          SELECT b.id, b.nn, b.accuracy, b.epoch
+          FROM {work_table} b
+          {where_sql}
+        ),
+        best_per_nn AS (
+          SELECT b.id,
+                 b.nn,
+                 b.accuracy,
+                 b.epoch,
+                 ROW_NUMBER() OVER (
+                   PARTITION BY b.nn
+                   ORDER BY b.accuracy DESC, b.epoch ASC, b.nn ASC
+                 ) AS rn
+          FROM base b
+        )
+        SELECT id
+        FROM best_per_nn
+        WHERE rn = 1
+        ORDER BY accuracy DESC
+        LIMIT ?
+        """,
+        base_params + params + [n],
+    )
+    rows = cur.fetchall()
+    return [row[0] for row in rows]
 
 def join_nn_query_legacy(sql: JoinConf,limit_clause:Optional[str], cur):
     if _is_real_table(cur, tmp_data):
